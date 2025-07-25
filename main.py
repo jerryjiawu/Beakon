@@ -12,7 +12,5 @@ def main():
     detector.start_monitoring()
 
 
-
-
 if __name__ == "__main__":
     main()

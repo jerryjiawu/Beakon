@@ -1,3 +1,18 @@
 {
-    
+    "detector": {
+        "sample_rate": 44100,
+        "chunk_size": 1024,
+        "channels": 1,
+        "low_freq": 1000,
+        "high_freq": 8000,
+        "spike_threshold": 2.0,
+        "recording_duration": 10.0,
+        "baseline_window": 5.0,
+        "min_bird_confidence": 0.6
+    },
+    "web": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": false
+    }
 }

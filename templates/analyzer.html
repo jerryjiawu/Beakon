@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Audio Analyzer</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Audio Analyzer:</strong> Upload audio files to analyze them for bird species using the same detection engine.
+                    Supported formats: WAV, MP3, FLAC, OGG
+                </div>
+                
+                <!-- File Upload Section -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="fas fa-upload"></i> Upload Audio File</h6>
+                            </div>
+                            <div class="card-body">
+                                <form id="upload-form" enctype="multipart/form-data">
+                                    <div class="mb-3">
+                                        <input type="file" class="form-control" id="audio-file" name="audio_file" 
+                                               accept=".wav,.mp3,.flac,.ogg" required>
+                                        <div class="form-text">Select an audio file to analyze</div>
+                                    </div>
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="sensitivity" class="form-label">Sensitivity</label>
+                                                <input type="range" class="form-range" id="sensitivity" name="sensitivity" 
+                                                       min="0.5" max="1.5" step="0.1" value="1.0">
+                                                <div class="form-text">Current: <span id="sensitivity-value">1.0</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="min-confidence" class="form-label">Min Confidence</label>
+                                                <input type="range" class="form-range" id="min-confidence" name="min_confidence" 
+                                                       min="0.1" max="0.9" step="0.05" value="0.6">
+                                                <div class="form-text">Current: <span id="confidence-value">0.6</span></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <button type="submit" class="btn btn-primary" id="analyze-btn">
+                                        <i class="fas fa-cog fa-spin" id="analyze-spinner" style="display: none;"></i>
+                                        <i class="fas fa-search" id="analyze-icon"></i>
+                                        Analyze Audio
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0"><i class="fas fa-info"></i> Analysis Info</h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0">
+                                    <li><i class="fas fa-check text-success"></i> Automatic species identification</li>
+                                    <li><i class="fas fa-check text-success"></i> Confidence scoring</li>
+                                    <li><i class="fas fa-check text-success"></i> Timeline analysis</li>
+                                    <li><i class="fas fa-check text-success"></i> 6000+ bird species support</li>
+                                    <li><i class="fas fa-check text-success"></i> Real-time processing</li>
+                                </ul>
+                                
+                                <div class="mt-3">
+                                    <small class="text-muted">
+                                        <strong>Tip:</strong> For best results, use audio files with clear bird sounds 
+                                        and minimal background noise. The analyzer works best with recordings 
+                                        longer than 3 seconds.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Results Section -->
+                <div id="results-section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0"><i class="fas fa-chart-bar"></i> Analysis Results</h6>
+                            <button class="btn btn-sm btn-outline-secondary" id="export-results">
+                                <i class="fas fa-download"></i> Export Results
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="row" id="results-content">
+                                <!-- Results will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Error Section -->
+                <div id="error-section" class="alert alert-danger" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span id="error-message"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Species Detail Modal -->
+<div class="modal fade" id="speciesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="species-modal-title">Species Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="species-modal-body">
+                <!-- Species details will be populated here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let analysisResults = null;
+
+function showAlert(message, type = 'info') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+function formatConfidence(confidence) {
+    return (confidence * 100).toFixed(1) + '%';
+}
+
+function getConfidenceColor(confidence) {
+    if (confidence >= 0.8) return 'success';
+    if (confidence >= 0.6) return 'warning';
+    return 'danger';
+}
+
+function displayResults(results) {
+    const resultsSection = document.getElementById('results-section');
+    const resultsContent = document.getElementById('results-content');
+    const errorSection = document.getElementById('error-section');
+    
+    // Hide error section
+    errorSection.style.display = 'none';
+    
+    if (results.error) {
+        errorSection.style.display = 'block';
+        document.getElementById('error-message').textContent = results.error;
+        resultsSection.style.display = 'none';
+        return;
+    }
+    
+    analysisResults = results;
+    
+    // Summary stats
+    const summaryHtml = `
+        <div class="col-md-12 mb-4">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card text-center bg-primary text-white">
+                        <div class="card-body">
+                            <h4>${results.analysis_duration ? results.analysis_duration.toFixed(1) : 'N/A'}s</h4>
+                            <p class="mb-0">Duration Analyzed</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-success text-white">
+                        <div class="card-body">
+                            <h4>${results.unique_species || 0}</h4>
+                            <p class="mb-0">Unique Species</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-info text-white">
+                        <div class="card-body">
+                            <h4>${results.total_detections || 0}</h4>
+                            <p class="mb-0">Total Detections</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center bg-warning text-white">
+                        <div class="card-body">
+                            <h4>${Object.keys(results.detailed_timeline || {}).length}</h4>
+                            <p class="mb-0">Time Segments</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    let speciesHtml = '';
+    if (results.species_detected && Object.keys(results.species_detected).length > 0) {
+        const sortedSpecies = Object.entries(results.species_detected)
+            .sort(([,a], [,b]) => b.max_confidence - a.max_confidence);
+        
+        speciesHtml = `
+            <div class="col-md-6">
+                <h6><i class="fas fa-dove"></i> Detected Species</h6>
+                <div class="list-group">
+                    ${sortedSpecies.map(([species, data]) => `
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">${species}</h6>
+                                    <p class="mb-1 text-muted"><em>${data.scientific_name}</em></p>
+                                    <div class="progress mb-2" style="height: 8px;">
+                                        <div class="progress-bar bg-${getConfidenceColor(data.max_confidence)}" 
+                                             style="width: ${data.max_confidence * 100}%"></div>
+                                    </div>
+                                    <small>Max confidence: ${formatConfidence(data.max_confidence)} 
+                                           | Detections: ${data.detection_count}</small>
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary ms-2" 
+                                        onclick="showSpeciesDetails('${species}', ${JSON.stringify(data).replace(/"/g, '&quot;')})">
+                                    <i class="fas fa-info"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    } else {
+        speciesHtml = `
+            <div class="col-md-6">
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-search fa-3x mb-3"></i>
+                    <h5>No Bird Species Detected</h5>
+                    <p>Try adjusting the confidence threshold or uploading a different audio file.</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    let timelineHtml = '';
+    if (results.detailed_timeline && Object.keys(results.detailed_timeline).length > 0) {
+        timelineHtml = `
+            <div class="col-md-6">
+                <h6><i class="fas fa-clock"></i> Detection Timeline</h6>
+                <div class="timeline-container" style="max-height: 400px; overflow-y: auto;">
+                    ${Object.entries(results.detailed_timeline).map(([timeSegment, detections]) => `
+                        <div class="card mb-2">
+                            <div class="card-body py-2">
+                                <h6 class="card-title mb-1">${timeSegment}</h6>
+                                <div class="d-flex flex-wrap">
+                                    ${detections.map(detection => `
+                                        <span class="badge bg-secondary me-1 mb-1">
+                                            ${detection.common_name} (${formatConfidence(detection.confidence)})
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    resultsContent.innerHTML = summaryHtml + `
+        <div class="col-md-12">
+            <div class="row">
+                ${speciesHtml}
+                ${timelineHtml}
+            </div>
+        </div>
+    `;
+    
+    resultsSection.style.display = 'block';
+    resultsSection.scrollIntoView({ behavior: 'smooth' });
+}
+
+function showSpeciesDetails(species, data) {
+    const modal = new bootstrap.Modal(document.getElementById('speciesModal'));
+    document.getElementById('species-modal-title').textContent = species;
+    
+    const modalBody = document.getElementById('species-modal-body');
+    modalBody.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Basic Information</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Common Name:</strong></td><td>${species}</td></tr>
+                    <tr><td><strong>Scientific Name:</strong></td><td><em>${data.scientific_name}</em></td></tr>
+                    <tr><td><strong>Max Confidence:</strong></td><td>${formatConfidence(data.max_confidence)}</td></tr>
+                    <tr><td><strong>Avg Confidence:</strong></td><td>${formatConfidence(data.avg_confidence)}</td></tr>
+                    <tr><td><strong>Detection Count:</strong></td><td>${data.detection_count}</td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6>Confidence Distribution</h6>
+                <div class="progress mb-2">
+                    <div class="progress-bar bg-${getConfidenceColor(data.max_confidence)}" 
+                         style="width: ${data.max_confidence * 100}%">
+                        Max: ${formatConfidence(data.max_confidence)}
+                    </div>
+                </div>
+                <div class="progress mb-2">
+                    <div class="progress-bar bg-${getConfidenceColor(data.avg_confidence)}" 
+                         style="width: ${data.avg_confidence * 100}%">
+                        Avg: ${formatConfidence(data.avg_confidence)}
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">
+                        This species was detected ${data.detection_count} time(s) 
+                        with an average confidence of ${formatConfidence(data.avg_confidence)}.
+                    </small>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    modal.show();
+}
+
+// Update slider values display
+document.getElementById('sensitivity').addEventListener('input', function() {
+    document.getElementById('sensitivity-value').textContent = this.value;
+});
+
+document.getElementById('min-confidence').addEventListener('input', function() {
+    document.getElementById('confidence-value').textContent = this.value;
+});
+
+// Handle form submission
+document.getElementById('upload-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const analyzeIcon = document.getElementById('analyze-icon');
+    const analyzeSpinner = document.getElementById('analyze-spinner');
+    
+    // Show loading state
+    analyzeBtn.disabled = true;
+    analyzeIcon.style.display = 'none';
+    analyzeSpinner.style.display = 'inline-block';
+    
+    // Hide previous results
+    document.getElementById('results-section').style.display = 'none';
+    document.getElementById('error-section').style.display = 'none';
+    
+    fetch('/api/analyze_audio', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(results => {
+        displayResults(results);
+    })
+    .catch(error => {
+        console.error('Error analyzing audio:', error);
+        document.getElementById('error-section').style.display = 'block';
+        document.getElementById('error-message').textContent = 'Error analyzing audio: ' + error.message;
+    })
+    .finally(() => {
+        // Reset loading state
+        analyzeBtn.disabled = false;
+        analyzeIcon.style.display = 'inline-block';
+        analyzeSpinner.style.display = 'none';
+    });
+});
+
+// Export results
+document.getElementById('export-results').addEventListener('click', function() {
+    if (!analysisResults) {
+        showAlert('No results to export', 'warning');
+        return;
+    }
+    
+    const dataStr = JSON.stringify(analysisResults, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    const url = URL.createObjectURL(dataBlob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `audio_analysis_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    
+    URL.revokeObjectURL(url);
+    showAlert('Results exported successfully', 'success');
+});
+</script>
+{% endblock %}
