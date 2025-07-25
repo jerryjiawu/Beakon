@@ -101,6 +101,14 @@
                                     <div class="form-text">Enable Flask debug mode (disable in production)</div>
                                 </div>
                             </div>
+                            
+                            <div class="mb-3">
+                                <label for="web_password" class="form-label">Dashboard Password</label>
+                                <input type="password" class="form-control" id="web_password" name="web.password" 
+                                       value="{{ settings.web.password if settings.web else 'admin123' }}"
+                                       placeholder="Enter new password">
+                                <div class="form-text">Password for accessing the web dashboard</div>
+                            </div>
                         </div>
                     </div>
                     

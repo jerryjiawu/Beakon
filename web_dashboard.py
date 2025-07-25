@@ -1,21 +1,12 @@
-#!/usr/bin/env python3
-"""
-Acoustic Detection System - All-in-One Launcher
-Starts both the detection engine and web dashboard in a single application.
-"""
-
-import sys
-import os
-import socket
-import threading
-import time
-import signal
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 import json
+import os
 import datetime
+import threading
+import time
 import numpy as np
 import plotly.graph_objs as go
 import plotly.utils
@@ -23,50 +14,8 @@ from src.detector import AcousticDetector
 from src.settings import Settings
 import soundfile as sf
 
-# Global variables
-detector = None
-detection_history = []
-detector_thread = None
-detector_running = False
-
-def get_local_ip():
-    """Get the local IPv4 address."""
-    try:
-        # Connect to a remote address to determine local IP
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))  # Google DNS
-        local_ip = s.getsockname()[0]
-        s.close()
-        return local_ip
-    except Exception:
-        return "127.0.0.1"
-
-def print_startup_info(host, port):
-    """Print colorful startup information."""
-    local_ip = get_local_ip()
-    
-    print("\n" + "="*60)
-    print("🎤 ACOUSTIC DETECTION SYSTEM STARTED")
-    print("="*60)
-    print(f"🌐 Local Access:     http://localhost:{port}")
-    print(f"🌍 Network Access:   http://{local_ip}:{port}")
-    print("="*60)
-    print("🔑 Default Login:")
-    print("   Password: admin123")
-    print("="*60)
-    print("📊 Features Available:")
-    print("   • Real-time bird detection")
-    print("   • Live web dashboard")
-    print("   • Audio file analyzer")
-    print("   • Settings management")
-    print("   • Detection history")
-    print("="*60)
-    print("⏹️  Press Ctrl+C to stop the system")
-    print("="*60)
-
-# Flask App Setup
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-change-this-in-production'
+app.secret_key = 'your-secret-key-change-this-in-production'  # Change this!
 
 # Flask-Login setup
 login_manager = LoginManager()
@@ -90,14 +39,20 @@ def load_user(user_id):
         return User(user_id)
     return None
 
+# Global variables for the detector and detection history
+detector = None
+detection_history = []
+detector_thread = None
+detector_running = False
+
 class DetectionStore:
     """Store detection results in memory."""
     def __init__(self):
         self.detections = []
-        self.max_detections = 100
+        self.max_detections = 100  # Keep last 100 detections
     
     def add_detection(self, detection_data):
-        self.detections.insert(0, detection_data)
+        self.detections.insert(0, detection_data)  # Add to beginning
         if len(self.detections) > self.max_detections:
             self.detections = self.detections[:self.max_detections]
     
@@ -109,8 +64,8 @@ class DetectionStore:
 
 detection_store = DetectionStore()
 
+# Custom detector class that stores detections
 class WebAcousticDetector(AcousticDetector):
-    """Enhanced detector that stores web results."""
     def process_recording(self):
         if self.recording_data:
             timestamp = datetime.datetime.now()
@@ -120,10 +75,11 @@ class WebAcousticDetector(AcousticDetector):
             
             print(f"🔍 ANALYZING RECORDING ({duration:.1f}s)...")
             
+            # Analyze recording for bird species
             bird_analysis = self.analyze_recording_for_birds(
                 full_recording,
-                lat=-1,
-                lon=-1,
+                lat=-1,  # Can be configured via settings
+                lon=-1,  # Can be configured via settings
                 week=self._get_current_week(),
                 sensitivity=1.0,
                 min_confidence=self.min_bird_confidence
@@ -138,7 +94,7 @@ class WebAcousticDetector(AcousticDetector):
             }
             detection_store.add_detection(detection_data)
             
-            # Console output
+            # Display results (console)
             if 'error' in bird_analysis:
                 print(f"❌ Bird analysis failed: {bird_analysis['error']}")
             else:
@@ -147,6 +103,8 @@ class WebAcousticDetector(AcousticDetector):
                 
                 if unique_species > 0:
                     print(f"🐦 BIRDS DETECTED: {unique_species} species, {total_detections} total detections")
+                    
+                    # Show top species by confidence
                     species_data = bird_analysis['species_detected']
                     sorted_species = sorted(
                         species_data.items(), 
@@ -154,26 +112,29 @@ class WebAcousticDetector(AcousticDetector):
                         reverse=True
                     )
                     
-                    for i, (common_name, data) in enumerate(sorted_species[:3]):
+                    for i, (common_name, data) in enumerate(sorted_species[:5]):  # Top 5
                         confidence = data['max_confidence']
+                        count = data['detection_count']
                         scientific = data['scientific_name']
-                        print(f"  {i+1}. {common_name} ({scientific}) - {confidence:.3f}")
+                        print(f"  {i+1}. {common_name} ({scientific}) - {confidence:.3f} confidence ({count} detections)")
                 else:
-                    print("🔍 No bird species detected")
+                    print("🔍 No bird species detected in recording")
             
-            print(f"✅ Analysis complete")
+            print(f"✅ Recording analysis complete")
         
+        # Reset recording state
         self.is_recording = False
         self.recording_start_time = None
         self.recording_data = []
 
 def run_detector():
-    """Run the acoustic detector."""
+    """Run the acoustic detector in a separate thread."""
     global detector, detector_running
     try:
         settings = Settings()
         settings.load()
         
+        # Create detector with settings
         detector_config = settings.config.get('detector', {})
         detector = WebAcousticDetector(
             sample_rate=detector_config.get('sample_rate', 44100),
@@ -188,18 +149,18 @@ def run_detector():
         )
         
         detector_running = True
-        print("🎤 Starting acoustic monitoring...")
         detector.start_monitoring()
     except Exception as e:
-        print(f"❌ Detector error: {e}")
+        print(f"Detector error: {e}")
         detector_running = False
 
-# Web Routes
 @app.route('/')
 @login_required
 def dashboard():
+    """Main dashboard page."""
     recent_detections = detection_store.get_recent_detections(10)
     
+    # Calculate statistics
     total_detections = len(detection_store.detections)
     species_count = set()
     for detection in detection_store.detections:
@@ -217,6 +178,7 @@ def dashboard():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    """Login page."""
     if request.method == 'POST':
         password = request.form['password']
         system_password = get_system_password()
@@ -233,25 +195,22 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
+    """Logout user."""
     logout_user()
     return redirect(url_for('login'))
 
 @app.route('/settings')
 @login_required
 def settings():
+    """Settings editor page."""
     settings = Settings()
     settings.load()
     return render_template('settings.html', settings=settings.config)
 
-@app.route('/analyzer')
-@login_required
-def analyzer():
-    return render_template('analyzer.html')
-
-# API Routes
 @app.route('/api/settings', methods=['GET', 'POST'])
 @login_required
 def api_settings():
+    """API endpoint for settings management."""
     settings = Settings()
     
     if request.method == 'GET':
@@ -267,9 +226,16 @@ def api_settings():
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)}), 400
 
+@app.route('/analyzer')
+@login_required
+def analyzer():
+    """Audio analyzer page."""
+    return render_template('analyzer.html')
+
 @app.route('/api/analyze_audio', methods=['POST'])
 @login_required
 def analyze_audio():
+    """Analyze uploaded audio file."""
     if 'audio_file' not in request.files:
         return jsonify({'error': 'No audio file provided'}), 400
     
@@ -278,22 +244,27 @@ def analyze_audio():
         return jsonify({'error': 'No file selected'}), 400
     
     try:
+        # Save uploaded file temporarily
         filename = secure_filename(file.filename)
         temp_path = os.path.join('temp', filename)
         os.makedirs('temp', exist_ok=True)
         file.save(temp_path)
         
+        # Load and analyze audio
         audio_data, sample_rate = sf.read(temp_path)
         if len(audio_data.shape) > 1:
-            audio_data = audio_data[:, 0]
+            audio_data = audio_data[:, 0]  # Convert to mono
         
+        # Create temporary detector for analysis
         temp_detector = AcousticDetector()
         if temp_detector.bird_model is not None:
             analysis = temp_detector.analyze_recording_for_birds(audio_data)
         else:
             analysis = {'error': 'Bird detection model not available'}
         
+        # Clean up temp file
         os.remove(temp_path)
+        
         return jsonify(analysis)
         
     except Exception as e:
@@ -302,13 +273,15 @@ def analyze_audio():
 @app.route('/api/detections')
 @login_required
 def api_detections():
+    """Get recent detections as JSON."""
     limit = request.args.get('limit', 20, type=int)
     detections = detection_store.get_recent_detections(limit)
     return jsonify(detections)
 
 @app.route('/api/detector/start', methods=['POST'])
 @login_required
-def start_detector_api():
+def start_detector():
+    """Start the acoustic detector."""
     global detector_thread, detector_running
     
     if not detector_running:
@@ -320,7 +293,8 @@ def start_detector_api():
 
 @app.route('/api/detector/stop', methods=['POST'])
 @login_required
-def stop_detector_api():
+def stop_detector():
+    """Stop the acoustic detector."""
     global detector, detector_running
     
     if detector and detector_running:
@@ -333,25 +307,31 @@ def stop_detector_api():
 @app.route('/api/detections/clear', methods=['POST'])
 @login_required
 def clear_detections():
+    """Clear all detection history."""
     detection_store.clear_detections()
     return jsonify({'status': 'success', 'message': 'Detection history cleared'})
 
 @app.route('/api/statistics')
 @login_required
 def api_statistics():
+    """Get detection statistics."""
     detections = detection_store.detections
     
+    # Species frequency chart data
     species_freq = {}
     daily_counts = {}
     
     for detection in detections:
+        # Count species
         if 'analysis' in detection and 'species_detected' in detection['analysis']:
             for species in detection['analysis']['species_detected'].keys():
                 species_freq[species] = species_freq.get(species, 0) + 1
         
-        date = detection['timestamp'][:10]
+        # Count daily detections
+        date = detection['timestamp'][:10]  # Get date part
         daily_counts[date] = daily_counts.get(date, 0) + 1
     
+    # Create Plotly charts
     species_chart = {
         'data': [{
             'x': list(species_freq.keys()),
@@ -388,27 +368,7 @@ def api_statistics():
         'unique_species': len(species_freq)
     })
 
-def signal_handler(sig, frame):
-    """Handle Ctrl+C gracefully."""
-    global detector, detector_running
-    print("\n" + "="*60)
-    print("⏹️  SHUTTING DOWN ACOUSTIC DETECTION SYSTEM")
-    print("="*60)
-    
-    if detector and detector_running:
-        print("🛑 Stopping detector...")
-        detector_running = False
-        detector.stop_monitoring()
-    
-    print("✅ System shutdown complete")
-    print("="*60)
-    sys.exit(0)
-
-def main():
-    """Main application entry point."""
-    # Register signal handler for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    
+if __name__ == '__main__':
     # Create default settings if they don't exist
     settings = Settings()
     settings.load()
@@ -426,39 +386,18 @@ def main():
                 'min_bird_confidence': 0.6
             },
             'web': {
-                'host': '0.0.0.0',  # Listen on all interfaces
+                'host': '127.0.0.1',
                 'port': 5000,
-                'debug': False,
+                'debug': True,
                 'password': 'admin123'
             }
         }
         settings.save()
     
-    # Get web configuration
+    # Run Flask app
     web_config = settings.config.get('web', {})
-    host = web_config.get('host', '0.0.0.0')
-    port = web_config.get('port', 5000)
-    debug = web_config.get('debug', False)
-    
-    # Print startup information
-    print_startup_info(host, port)
-    
-    # Start the detector automatically
-    print("🚀 Auto-starting detector...")
-    detector_thread = threading.Thread(target=run_detector, daemon=True)
-    detector_thread.start()
-    
-    # Small delay to let detector initialize
-    time.sleep(2)
-    
-    try:
-        # Start Flask app
-        app.run(host=host, port=port, debug=debug, use_reloader=False)
-    except KeyboardInterrupt:
-        signal_handler(signal.SIGINT, None)
-    except Exception as e:
-        print(f"❌ Error starting web server: {e}")
-        return 1
-
-if __name__ == '__main__':
-    sys.exit(main())
+    app.run(
+        host=web_config.get('host', '127.0.0.1'),
+        port=web_config.get('port', 5000),
+        debug=web_config.get('debug', True)
+    )
