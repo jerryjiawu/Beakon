@@ -10,7 +10,7 @@ import socket
 import threading
 import time
 import signal
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session, send_file
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
@@ -94,17 +94,33 @@ class DetectionStore:
     """Store detection results in memory."""
     def __init__(self):
         self.detections = []
-        self.max_detections = 100
+        self.max_detections = 10  # Store only last 10 bird detections
     
     def add_detection(self, detection_data):
-        self.detections.insert(0, detection_data)
-        if len(self.detections) > self.max_detections:
-            self.detections = self.detections[:self.max_detections]
+        # Only store detections that actually have birds
+        if detection_data.get('analysis', {}).get('unique_species', 0) > 0:
+            self.detections.insert(0, detection_data)
+            if len(self.detections) > self.max_detections:
+                # Remove old audio files when removing old detections
+                for old_detection in self.detections[self.max_detections:]:
+                    if 'audio_file' in old_detection:
+                        try:
+                            os.remove(old_detection['audio_file'])
+                        except:
+                            pass
+                self.detections = self.detections[:self.max_detections]
     
-    def get_recent_detections(self, limit=20):
-        return self.detections[:limit]
+    def get_recent_detections(self, limit=10):
+        return self.detections[:min(limit, len(self.detections))]
     
     def clear_detections(self):
+        # Remove all audio files before clearing
+        for detection in self.detections:
+            if 'audio_file' in detection:
+                try:
+                    os.remove(detection['audio_file'])
+                except:
+                    pass
         self.detections = []
 
 detection_store = DetectionStore()
@@ -129,14 +145,43 @@ class WebAcousticDetector(AcousticDetector):
                 min_confidence=self.min_bird_confidence
             )
             
-            # Store detection in web store
-            detection_data = {
-                'timestamp': timestamp.isoformat(),
-                'duration': duration,
-                'analysis': bird_analysis,
-                'formatted_time': timestamp.strftime("%Y-%m-%d %H:%M:%S")
-            }
-            detection_store.add_detection(detection_data)
+            # Only store and save audio if birds were detected
+            if not bird_analysis.get('error') and bird_analysis.get('unique_species', 0) > 0:
+                # Create recordings directory if it doesn't exist
+                os.makedirs('recordings', exist_ok=True)
+                
+                # Save the audio file
+                filename = f"detection_{timestamp.strftime('%Y%m%d_%H%M%S')}.wav"
+                audio_file_path = os.path.join('recordings', filename)
+                
+                try:
+                    import soundfile as sf
+                    sf.write(audio_file_path, full_recording, self.sample_rate)
+                    
+                    # Store detection data with audio file path
+                    detection_data = {
+                        'timestamp': timestamp.isoformat(),
+                        'duration': duration,
+                        'analysis': bird_analysis,
+                        'formatted_time': timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        'audio_file': audio_file_path,
+                        'filename': filename
+                    }
+                    detection_store.add_detection(detection_data)
+                    
+                    print(f"🐦 BIRDS DETECTED: {bird_analysis['unique_species']} species")
+                    print(f"💾 Audio saved: {filename}")
+                    
+                except Exception as e:
+                    print(f"❌ Error saving audio: {e}")
+                    # Store without audio file if saving fails
+                    detection_data = {
+                        'timestamp': timestamp.isoformat(),
+                        'duration': duration,
+                        'analysis': bird_analysis,
+                        'formatted_time': timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    detection_store.add_detection(detection_data)
             
             # Console output
             if 'error' in bird_analysis:
@@ -146,7 +191,6 @@ class WebAcousticDetector(AcousticDetector):
                 total_detections = bird_analysis['total_detections']
                 
                 if unique_species > 0:
-                    print(f"🐦 BIRDS DETECTED: {unique_species} species, {total_detections} total detections")
                     species_data = bird_analysis['species_detected']
                     sorted_species = sorted(
                         species_data.items(), 
@@ -159,7 +203,7 @@ class WebAcousticDetector(AcousticDetector):
                         scientific = data['scientific_name']
                         print(f"  {i+1}. {common_name} ({scientific}) - {confidence:.3f}")
                 else:
-                    print("🔍 No bird species detected")
+                    print("🔍 No bird species detected (not saved)")
             
             print(f"✅ Analysis complete")
         
@@ -200,14 +244,15 @@ def run_detector():
 def dashboard():
     recent_detections = detection_store.get_recent_detections(10)
     
-    total_detections = len(detection_store.detections)
+    # Count only actual bird detections (all stored detections have birds)
+    total_bird_detections = len(detection_store.detections)
     species_count = set()
     for detection in detection_store.detections:
         if 'analysis' in detection and 'species_detected' in detection['analysis']:
             species_count.update(detection['analysis']['species_detected'].keys())
     
     stats = {
-        'total_detections': total_detections,
+        'total_detections': total_bird_detections,
         'unique_species': len(species_count),
         'detector_status': 'Running' if detector_running else 'Stopped',
         'last_detection': recent_detections[0]['formatted_time'] if recent_detections else 'None'
@@ -387,6 +432,52 @@ def api_statistics():
         'total_detections': len(detections),
         'unique_species': len(species_freq)
     })
+
+@app.route('/api/audio/download/<filename>')
+@login_required
+def download_audio(filename):
+    """Download audio file."""
+    try:
+        # Security check: ensure filename exists in our detections
+        valid_file = False
+        for detection in detection_store.detections:
+            if detection.get('filename') == filename:
+                valid_file = True
+                break
+        
+        if not valid_file:
+            return jsonify({'error': 'File not found'}), 404
+        
+        file_path = os.path.join('recordings', filename)
+        if os.path.exists(file_path):
+            return send_file(file_path, as_attachment=True, download_name=filename)
+        else:
+            return jsonify({'error': 'Audio file not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/audio/stream/<filename>')
+@login_required
+def stream_audio(filename):
+    """Stream audio file for playback."""
+    try:
+        # Security check: ensure filename exists in our detections
+        valid_file = False
+        for detection in detection_store.detections:
+            if detection.get('filename') == filename:
+                valid_file = True
+                break
+        
+        if not valid_file:
+            return jsonify({'error': 'File not found'}), 404
+        
+        file_path = os.path.join('recordings', filename)
+        if os.path.exists(file_path):
+            return send_file(file_path, mimetype='audio/wav')
+        else:
+            return jsonify({'error': 'Audio file not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully."""

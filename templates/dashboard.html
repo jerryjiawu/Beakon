@@ -8,7 +8,7 @@
             <div class="card-body text-center">
                 <i class="fas fa-chart-bar fa-2x mb-2"></i>
                 <h4>{{ stats.total_detections }}</h4>
-                <p class="mb-0">Total Detections</p>
+                <p class="mb-0">Bird Detections</p>
             </div>
         </div>
     </div>
@@ -75,29 +75,40 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-list"></i> Recent Detections</h5>
-                <span class="badge bg-primary">{{ detections|length }} shown</span>
+                <h5 class="mb-0"><i class="fas fa-dove"></i> Recent Bird Detections</h5>
+                <span class="badge bg-primary">{{ detections|length }} shown (last 10)</span>
             </div>
             <div class="card-body" id="detections-container">
                 {% if detections %}
                     {% for detection in detections %}
-                    <div class="card mb-3 detection-card {% if detection.analysis.unique_species == 0 %}no-birds{% endif %}">
+                    <div class="card mb-3 detection-card">
                         <div class="card-body">
                             <div class="row">
                                 <div class="col-md-3">
                                     <h6 class="text-muted">
                                         <i class="fas fa-clock"></i> {{ detection.formatted_time }}
                                     </h6>
-                                    <p class="mb-0">
+                                    <p class="mb-2">
                                         <i class="fas fa-stopwatch"></i> Duration: {{ "%.1f"|format(detection.duration) }}s
                                     </p>
+                                    {% if detection.filename %}
+                                    <div class="btn-group-vertical d-grid gap-1">
+                                        <button class="btn btn-sm btn-success play-btn" 
+                                                onclick="if (this.innerHTML.includes('Play')) { playAudio('{{ detection.filename }}', this); } else { stopAudio(this); }">
+                                            <i class="fas fa-play"></i> Play Audio
+                                        </button>
+                                        <a href="/api/audio/download/{{ detection.filename }}" class="btn btn-sm btn-primary" download>
+                                            <i class="fas fa-download"></i> Download
+                                        </a>
+                                    </div>
+                                    {% endif %}
                                 </div>
                                 <div class="col-md-9">
                                     {% if detection.analysis.error %}
                                         <div class="alert alert-warning mb-0">
                                             <i class="fas fa-exclamation-triangle"></i> {{ detection.analysis.error }}
                                         </div>
-                                    {% elif detection.analysis.unique_species > 0 %}
+                                    {% else %}
                                         <h6 class="text-success mb-2">
                                             <i class="fas fa-dove"></i> 
                                             {{ detection.analysis.unique_species }} species detected 
@@ -115,10 +126,6 @@
                                                 </div>
                                             {% endfor %}
                                         </div>
-                                    {% else %}
-                                        <p class="text-muted mb-0">
-                                            <i class="fas fa-search"></i> No bird species detected
-                                        </p>
                                     {% endif %}
                                 </div>
                             </div>
@@ -127,9 +134,9 @@
                     {% endfor %}
                 {% else %}
                     <div class="text-center text-muted py-4">
-                        <i class="fas fa-microphone fa-3x mb-3"></i>
-                        <h5>No detections yet</h5>
-                        <p>Start the detector to begin monitoring for bird sounds.</p>
+                        <i class="fas fa-dove fa-3x mb-3"></i>
+                        <h5>No bird detections yet</h5>
+                        <p>Start the detector to begin monitoring for bird sounds. Only recordings with confirmed bird species will appear here.</p>
                     </div>
                 {% endif %}
             </div>
@@ -165,6 +172,78 @@
 {% block scripts %}
 <script>
 let refreshInterval;
+let currentAudio = null;
+
+function showAlert(message, type = 'info') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+function playAudio(filename, button) {
+    // Stop any currently playing audio
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+        // Reset all play buttons
+        document.querySelectorAll('.play-btn').forEach(btn => {
+            btn.innerHTML = '<i class="fas fa-play"></i> Play Audio';
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-success');
+        });
+    }
+    
+    // Create new audio element
+    currentAudio = new Audio(`/api/audio/stream/${filename}`);
+    
+    // Update button to show playing state
+    button.innerHTML = '<i class="fas fa-stop"></i> Stop Audio';
+    button.classList.remove('btn-success');
+    button.classList.add('btn-danger');
+    
+    // Handle audio events
+    currentAudio.addEventListener('ended', function() {
+        button.innerHTML = '<i class="fas fa-play"></i> Play Audio';
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-success');
+        currentAudio = null;
+    });
+    
+    currentAudio.addEventListener('error', function() {
+        showAlert('Error playing audio file', 'danger');
+        button.innerHTML = '<i class="fas fa-play"></i> Play Audio';
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-success');
+        currentAudio = null;
+    });
+    
+    // Play the audio
+    currentAudio.play().catch(error => {
+        showAlert('Error playing audio: ' + error.message, 'danger');
+        button.innerHTML = '<i class="fas fa-play"></i> Play Audio';
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-success');
+        currentAudio = null;
+    });
+}
+
+function stopAudio(button) {
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+        button.innerHTML = '<i class="fas fa-play"></i> Play Audio';
+        button.classList.remove('btn-danger');
+        button.classList.add('btn-success');
+    }
+}
 
 function showAlert(message, type = 'info') {
     const alertDiv = document.createElement('div');
