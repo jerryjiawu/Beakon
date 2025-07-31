@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acoustic Detection - Pi Zero W</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: white; padding: 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; padding: 20px; border-radius: 8px; }
+        .stat-card h3 { margin: 0; font-size: 2em; }
+        .stat-card p { margin: 5px 0 0 0; }
+        .controls { text-align: center; margin: 20px 0; }
+        .btn { background: #007bff; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer; }
+        .btn:hover { background: #0056b3; }
+        .btn.danger { background: #dc3545; }
+        .btn.danger:hover { background: #c82333; }
+        .btn.success { background: #28a745; }
+        .btn.success:hover { background: #218838; }
+        .detection { border-left: 4px solid #28a745; margin: 10px 0; padding: 15px; background: #f8f9fa; }
+        .detection-time { font-weight: bold; color: #666; }
+        .species { background: #e3f2fd; color: #1976d2; padding: 4px 8px; border-radius: 4px; margin: 2px; display: inline-block; font-size: 0.9em; }
+        .audio-controls { margin-top: 10px; }
+        .audio-controls button { margin-right: 10px; }
+        .navbar { background: #343a40; color: white; padding: 15px; margin: -20px -20px 20px -20px; }
+        .navbar h1 { margin: 0; }
+        .navbar a { color: white; text-decoration: none; margin-left: 20px; }
+        .alert { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .alert-info { background: #d1ecf1; color: #0c5460; }
+        .alert-success { background: #d4edda; color: #155724; }
+        .alert-warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="navbar">
+            <h1>🎤 Acoustic Detection</h1>
+            <a href="/">Dashboard</a>
+            <a href="/settings">Settings</a>
+            <a href="/logout">Logout</a>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <h3>{{ stats.total_detections }}</h3>
+                <p>Bird Detections</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="detector-status" style="color: {% if stats.detector_status == 'Running' %}#90EE90{% else %}#FFB6C1{% endif %}">
+                    {{ stats.detector_status }}
+                </h3>
+                <p>Detector Status</p>
+            </div>
+            <div class="stat-card">
+                <h3>{{ stats.last_detection }}</h3>
+                <p>Last Detection</p>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="start-btn" class="btn success">▶️ Start</button>
+            <button id="stop-btn" class="btn danger">⏹️ Stop</button>
+            <button id="clear-btn" class="btn">🗑️ Clear</button>
+            <button id="refresh-btn" class="btn">🔄 Refresh</button>
+        </div>
+
+        <div class="card">
+            <h3>Recent Bird Detections</h3>
+            <div id="detections">
+                {% if detections %}
+                    {% for detection in detections %}
+                    <div class="detection">
+                        <div class="detection-time">{{ detection.formatted_time }} - {{ "%.1f"|format(detection.duration) }}s</div>
+                        <div>
+                            <strong>{{ detection.species_count }} species detected</strong>
+                            {% for species in detection.top_species %}
+                                <span class="species">{{ species.name }} ({{ "%.0f"|format(species.confidence * 100) }}%)</span>
+                            {% endfor %}
+                        </div>
+                        {% if detection.filename %}
+                        <div class="audio-controls">
+                            <button class="btn" onclick="playAudio('{{ detection.filename }}')">🔊 Play</button>
+                            <button class="btn" onclick="downloadAudio('{{ detection.filename }}')">⬇️ Download</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="alert alert-info">
+                        No bird detections yet. Start the detector to begin monitoring.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <audio id="audio-player" controls style="display: none;"></audio>
+
+    <script>
+        function showAlert(message, type = 'info') {
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            document.querySelector('.container').insertBefore(alert, document.querySelector('.stats'));
+            setTimeout(() => alert.remove(), 3000);
+        }
+
+        function playAudio(filename) {
+            const player = document.getElementById('audio-player');
+            player.src = `/api/audio/stream/${filename}`;
+            player.style.display = 'block';
+            player.play();
+        }
+
+        function downloadAudio(filename) {
+            window.location.href = `/api/audio/download/${filename}`;
+        }
+
+        function refreshDetections() {
+            fetch('/api/detections')
+                .then(response => response.json())
+                .then(detections => {
+                    const container = document.getElementById('detections');
+                    if (detections.length === 0) {
+                        container.innerHTML = '<div class="alert alert-info">No bird detections yet.</div>';
+                    } else {
+                        container.innerHTML = detections.map(d => `
+                            <div class="detection">
+                                <div class="detection-time">${d.formatted_time} - ${d.duration.toFixed(1)}s</div>
+                                <div>
+                                    <strong>${d.species_count} species detected</strong>
+                                    ${d.top_species.map(s => `<span class="species">${s.name} (${Math.round(s.confidence * 100)}%)</span>`).join('')}
+                                </div>
+                                ${d.filename ? `
+                                <div class="audio-controls">
+                                    <button class="btn" onclick="playAudio('${d.filename}')">🔊 Play</button>
+                                    <button class="btn" onclick="downloadAudio('${d.filename}')">⬇️ Download</button>
+                                </div>` : ''}
+                            </div>
+                        `).join('');
+                    }
+                });
+        }
+
+        // Event listeners
+        document.getElementById('start-btn').addEventListener('click', () => {
+            fetch('/api/detector/start', {method: 'POST'})
+                .then(response => response.json())
+                .then(data => {
+                    showAlert(data.message, data.status === 'success' ? 'success' : 'info');
+                    if (data.status === 'success') {
+                        document.getElementById('detector-status').textContent = 'Running';
+                        document.getElementById('detector-status').style.color = '#90EE90';
+                    }
+                });
+        });
+
+        document.getElementById('stop-btn').addEventListener('click', () => {
+            fetch('/api/detector/stop', {method: 'POST'})
+                .then(response => response.json())
+                .then(data => {
+                    showAlert(data.message, data.status === 'success' ? 'success' : 'info');
+                    if (data.status === 'success') {
+                        document.getElementById('detector-status').textContent = 'Stopped';
+                        document.getElementById('detector-status').style.color = '#FFB6C1';
+                    }
+                });
+        });
+
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            if (confirm('Clear all detections?')) {
+                fetch('/api/detections/clear', {method: 'POST'})
+                    .then(response => response.json())
+                    .then(data => {
+                        showAlert(data.message, 'success');
+                        refreshDetections();
+                    });
+            }
+        });
+
+        document.getElementById('refresh-btn').addEventListener('click', refreshDetections);
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshDetections, 30000);
+    </script>
+</body>
+</html>

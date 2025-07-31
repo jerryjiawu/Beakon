@@ -1,0 +1,22 @@
+# Pi Zero W Optimized Requirements
+# Lightweight versions for resource-constrained devices
+
+# Audio processing (core)
+numpy>=1.21.0,<1.25.0
+scipy>=1.7.0,<1.11.0
+librosa>=0.8.0,<0.10.0
+soundfile>=0.10.0
+
+# Web framework (minimal)
+Flask>=2.0.0,<3.0.0
+Flask-Login>=0.6.0
+
+# Audio I/O
+pyaudio>=0.2.11
+
+# AI/ML (try TensorFlow Lite first, fallback to TensorFlow)
+tflite-runtime>=2.5.0; platform_machine == "armv6l" or platform_machine == "armv7l"
+tensorflow>=2.8.0,<2.13.0; platform_machine != "armv6l" and platform_machine != "armv7l"
+
+# System utilities
+psutil>=5.8.0

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acoustic Detection - Pi Zero W</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .card { background: white; padding: 20px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .navbar { background: #343a40; color: white; padding: 15px; margin: -20px -20px 20px -20px; }
+        .navbar h1 { margin: 0; }
+        .form-group { margin: 15px 0; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-control { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .btn { background: #007bff; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer; }
+        .btn:hover { background: #0056b3; }
+        .btn.success { background: #28a745; }
+        .btn.success:hover { background: #218838; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 4px; }
+        .section h3 { margin-top: 0; color: #333; }
+        .alert { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .alert-info { background: #d1ecf1; color: #0c5460; }
+        .alert-success { background: #d4edda; color: #155724; }
+        .alert-danger { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="navbar">
+            <h1>⚙️ Settings - Pi Zero W</h1>
+        </div>
+
+        <div class="card">
+            <form method="POST">
+                <div class="section">
+                    <h3>Web Access</h3>
+                    <div class="form-group">
+                        <label for="password">Password:</label>
+                        <input type="password" id="password" name="password" class="form-control" 
+                               value="{{ settings.password }}" required>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Detection Settings</h3>
+                    <div class="form-group">
+                        <label for="confidence_threshold">Confidence Threshold (0.0-1.0):</label>
+                        <input type="number" id="confidence_threshold" name="confidence_threshold" 
+                               class="form-control" step="0.01" min="0" max="1" 
+                               value="{{ settings.confidence_threshold }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="chunk_duration">Recording Duration (seconds):</label>
+                        <input type="number" id="chunk_duration" name="chunk_duration" 
+                               class="form-control" step="0.5" min="1" max="30" 
+                               value="{{ settings.chunk_duration }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="sample_rate">Sample Rate (Hz):</label>
+                        <input type="number" id="sample_rate" name="sample_rate" 
+                               class="form-control" step="1000" min="8000" max="48000" 
+                               value="{{ settings.sample_rate }}">
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Audio Settings</h3>
+                    <div class="form-group">
+                        <label for="chunk_size">Chunk Size (samples):</label>
+                        <input type="number" id="chunk_size" name="chunk_size" 
+                               class="form-control" step="256" min="256" max="2048" 
+                               value="{{ settings.chunk_size }}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="overlap">Overlap (0.0-0.5):</label>
+                        <input type="number" id="overlap" name="overlap" 
+                               class="form-control" step="0.1" min="0" max="0.5" 
+                               value="{{ settings.overlap }}">
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Pi Zero W Optimization</h3>
+                    <div class="alert alert-info">
+                        These settings are optimized for Raspberry Pi Zero W's limited resources:
+                        <ul>
+                            <li>Lower sample rate (22050 Hz) reduces processing load</li>
+                            <li>Smaller chunk size (512) saves memory</li>
+                            <li>Higher confidence threshold (0.6) reduces false positives</li>
+                            <li>Shorter recordings (3s) for faster processing</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 20px;">
+                    <button type="submit" class="btn success">💾 Save Settings</button>
+                    <a href="/" class="btn">🏠 Back to Dashboard</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
