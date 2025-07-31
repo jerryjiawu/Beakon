@@ -14,7 +14,10 @@ def test_import(module_name, description):
         print(f"✅ {description}")
         return True
     except ImportError as e:
-        print(f"❌ {description}: {e}")
+        if "libopenblas" in str(e).lower():
+            print(f"❌ {description}: OpenBLAS issue - run fix_numpy.sh")
+        else:
+            print(f"❌ {description}: {e}")
         return False
     except Exception as e:
         print(f"⚠️  {description}: {e}")

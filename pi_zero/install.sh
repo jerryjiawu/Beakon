@@ -51,15 +51,21 @@ sudo apt-get install -y \
     libffi-dev \
     libssl-dev \
     libatlas-base-dev \
+    libopenblas-dev \
+    gfortran \
     build-essential \
     git
 
-# Install core packages from piwheels (much faster!)
-echo "⚡ Installing core packages from piwheels..."
-# Install core packages from piwheels (much faster!)
-echo "⚡ Installing core packages from piwheels..."
+# Fix NumPy/OpenBLAS issue - use system packages for reliability
+echo "🔢 Installing NumPy and SciPy (system packages for stability)..."
+sudo apt-get install -y python3-numpy python3-scipy || {
+    echo "⚠️  System packages failed, trying pip with specific version..."
+    pip3 install --no-cache-dir numpy==1.21.6 scipy==1.7.3
+}
+
+# Install other core packages from piwheels
+echo "⚡ Installing other core packages from piwheels..."
 pip3 install --no-cache-dir \
-    numpy \
     Flask \
     Flask-Login \
     psutil \
@@ -75,18 +81,16 @@ pip3 install --no-cache-dir pyaudio || {
     }
 }
 
-# Install scipy (can be slow, but piwheels should help)
-echo "🔢 Installing scipy..."
-pip3 install --no-cache-dir scipy || {
-    echo "⚠️  scipy failed, trying system package..."
-    sudo apt-get install -y python3-scipy
-}
-
 # Install librosa (this is the slowest one)
 echo "🎵 Installing librosa (this may take 10-15 minutes)..."
-pip3 install --no-cache-dir librosa==0.9.2 || {
-    echo "⚠️  librosa failed, trying older version..."
-    pip3 install --no-cache-dir librosa==0.8.1
+# Try older, more stable version first
+pip3 install --no-cache-dir librosa==0.8.1 || {
+    echo "⚠️  librosa 0.8.1 failed, trying 0.9.2..."
+    pip3 install --no-cache-dir librosa==0.9.2 || {
+        echo "⚠️  Both versions failed, trying without scipy dependency check..."
+        pip3 install --no-cache-dir --no-deps librosa==0.8.1
+        pip3 install --no-cache-dir resampy numba
+    }
 }
 
 # Install TensorFlow Lite for ARM (try multiple sources)
