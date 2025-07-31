@@ -15,5 +15,17 @@
         "port": 5000,
         "debug": false,
         "password": "admin123"
+    },
+    "ftp": {
+        "enabled": false,
+        "host": "",
+        "port": 21,
+        "username": "",
+        "password": "",
+        "directory": "/acoustic_detection",
+        "upload_all": true,
+        "keep_local_days": 7,
+        "retry_attempts": 3,
+        "timeout": 30
     }
 }

@@ -109,6 +109,70 @@
                                        placeholder="Enter new password">
                                 <div class="form-text">Password for accessing the web dashboard</div>
                             </div>
+                            
+                            <h6 class="mt-4">FTP Upload Settings</h6>
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="ftp_enabled" name="ftp.enabled" 
+                                           {% if settings.ftp and settings.ftp.enabled %}checked{% endif %}>
+                                    <label class="form-check-label" for="ftp_enabled">
+                                        Enable FTP Upload
+                                    </label>
+                                    <div class="form-text">Automatically upload all recordings to FTP server</div>
+                                </div>
+                            </div>
+                            
+                            <div id="ftp-settings" style="{% if not settings.ftp or not settings.ftp.enabled %}display: none;{% endif %}">
+                                <div class="mb-3">
+                                    <label for="ftp_host" class="form-label">FTP Server</label>
+                                    <input type="text" class="form-control" id="ftp_host" name="ftp.host" 
+                                           value="{{ settings.ftp.host if settings.ftp else '' }}"
+                                           placeholder="ftp.example.com">
+                                    <div class="form-text">FTP server hostname or IP address</div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="ftp_username" class="form-label">Username</label>
+                                            <input type="text" class="form-control" id="ftp_username" name="ftp.username" 
+                                                   value="{{ settings.ftp.username if settings.ftp else '' }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="ftp_password" class="form-label">Password</label>
+                                            <input type="password" class="form-control" id="ftp_password" name="ftp.password" 
+                                                   value="{{ settings.ftp.password if settings.ftp else '' }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="ftp_port" class="form-label">Port</label>
+                                            <input type="number" class="form-control" id="ftp_port" name="ftp.port" 
+                                                   value="{{ settings.ftp.port if settings.ftp else 21 }}" min="1" max="65535">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label for="ftp_directory" class="form-label">Remote Directory</label>
+                                            <input type="text" class="form-control" id="ftp_directory" name="ftp.directory" 
+                                                   value="{{ settings.ftp.directory if settings.ftp else '/acoustic_detection' }}"
+                                                   placeholder="/acoustic_detection">
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="ftp_keep_days" class="form-label">Keep Local Files (Days)</label>
+                                    <input type="number" class="form-control" id="ftp_keep_days" name="ftp.keep_local_days" 
+                                           value="{{ settings.ftp.keep_local_days if settings.ftp else 7 }}" min="0" max="365">
+                                    <div class="form-text">Days to keep files locally after upload (0 = delete immediately)</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -362,5 +426,11 @@ document.getElementById('import-file').addEventListener('change', function(e) {
 
 // Load settings on page load
 document.addEventListener('DOMContentLoaded', loadSettings);
+
+// Toggle FTP settings visibility
+document.getElementById('ftp_enabled').addEventListener('change', function() {
+    const ftpSettings = document.getElementById('ftp-settings');
+    ftpSettings.style.display = this.checked ? 'block' : 'none';
+});
 </script>
 {% endblock %}

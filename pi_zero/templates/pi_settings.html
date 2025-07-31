@@ -84,6 +84,54 @@
                 </div>
 
                 <div class="section">
+                    <h3>📤 FTP Upload</h3>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="ftp_enabled" name="ftp_enabled" 
+                                   {% if settings.ftp and settings.ftp.enabled %}checked{% endif %}>
+                            Enable FTP Upload
+                        </label>
+                        <small>Upload all recordings to FTP server</small>
+                    </div>
+                    
+                    <div id="ftp-settings" style="{% if not settings.ftp or not settings.ftp.enabled %}display: none;{% endif %}">
+                        <div class="form-group">
+                            <label for="ftp_host">FTP Server:</label>
+                            <input type="text" id="ftp_host" name="ftp_host" class="form-control"
+                                   value="{{ settings.ftp.host if settings.ftp else '' }}" 
+                                   placeholder="ftp.example.com">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ftp_username">Username:</label>
+                            <input type="text" id="ftp_username" name="ftp_username" class="form-control"
+                                   value="{{ settings.ftp.username if settings.ftp else '' }}">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ftp_password">Password:</label>
+                            <input type="password" id="ftp_password" name="ftp_password" class="form-control"
+                                   value="{{ settings.ftp.password if settings.ftp else '' }}">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ftp_directory">Remote Directory:</label>
+                            <input type="text" id="ftp_directory" name="ftp_directory" class="form-control"
+                                   value="{{ settings.ftp.directory if settings.ftp else '/acoustic_detection' }}" 
+                                   placeholder="/acoustic_detection">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="ftp_keep_days">Keep Local Files (Days):</label>
+                            <input type="number" id="ftp_keep_days" name="ftp_keep_days" class="form-control"
+                                   value="{{ settings.ftp.keep_local_days if settings.ftp else 1 }}" 
+                                   min="0" max="30">
+                            <small>0 = delete immediately after upload</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
                     <h3>Pi Zero W Optimization</h3>
                     <div class="alert alert-info">
                         These settings are optimized for Raspberry Pi Zero W's limited resources:
@@ -103,5 +151,13 @@
             </form>
         </div>
     </div>
+
+    <script>
+        // Toggle FTP settings visibility
+        document.getElementById('ftp_enabled').addEventListener('change', function() {
+            const ftpSettings = document.getElementById('ftp-settings');
+            ftpSettings.style.display = this.checked ? 'block' : 'none';
+        });
+    </script>
 </body>
 </html>

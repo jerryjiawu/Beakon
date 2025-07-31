@@ -10,6 +10,8 @@ import socket
 import threading
 import time
 import signal
+import ftplib
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user
 import json
@@ -139,6 +141,132 @@ class LightweightDetectionStore:
 
 detection_store = LightweightDetectionStore()
 
+class FTPUploader:
+    """Handles FTP uploads and local file cleanup."""
+    
+    def __init__(self):
+        self.upload_queue = []
+        self.upload_thread = None
+        self.upload_running = False
+    
+    def start_uploader(self):
+        """Start the FTP upload thread."""
+        if not self.upload_running:
+            self.upload_running = True
+            self.upload_thread = threading.Thread(target=self._upload_worker, daemon=True)
+            self.upload_thread.start()
+            print("📤 FTP uploader started")
+    
+    def stop_uploader(self):
+        """Stop the FTP upload thread."""
+        self.upload_running = False
+        if self.upload_thread:
+            self.upload_thread.join(timeout=5)
+    
+    def queue_upload(self, file_path, remote_name=None):
+        """Queue a file for FTP upload."""
+        if not remote_name:
+            remote_name = os.path.basename(file_path)
+        
+        self.upload_queue.append({
+            'local_path': file_path,
+            'remote_name': remote_name,
+            'timestamp': time.time()
+        })
+        print(f"📤 Queued for upload: {remote_name}")
+    
+    def _upload_worker(self):
+        """Background worker that handles FTP uploads."""
+        while self.upload_running:
+            try:
+                settings = Settings()
+                settings.load()
+                ftp_config = settings.config.get('ftp', {})
+                
+                if not ftp_config.get('enabled', False):
+                    time.sleep(10)
+                    continue
+                
+                if not self.upload_queue:
+                    time.sleep(5)
+                    continue
+                
+                # Process upload queue
+                upload_item = self.upload_queue.pop(0)
+                success = self._upload_file(upload_item, ftp_config)
+                
+                if success:
+                    print(f"✅ Uploaded: {upload_item['remote_name']}")
+                    # Clean up local file after successful upload if configured
+                    if ftp_config.get('upload_all', True):
+                        self._cleanup_local_files(ftp_config)
+                else:
+                    # Re-queue failed uploads (with limit)
+                    if upload_item.get('retry_count', 0) < ftp_config.get('retry_attempts', 3):
+                        upload_item['retry_count'] = upload_item.get('retry_count', 0) + 1
+                        self.upload_queue.append(upload_item)
+                        print(f"🔄 Retrying upload: {upload_item['remote_name']} (attempt {upload_item['retry_count']})")
+                    else:
+                        print(f"❌ Failed to upload after retries: {upload_item['remote_name']}")
+                
+            except Exception as e:
+                print(f"❌ Upload worker error: {e}")
+                time.sleep(10)
+    
+    def _upload_file(self, upload_item, ftp_config):
+        """Upload a single file via FTP."""
+        try:
+            if not os.path.exists(upload_item['local_path']):
+                return False
+            
+            # Connect to FTP server
+            ftp = ftplib.FTP()
+            ftp.connect(ftp_config['host'], ftp_config.get('port', 21), timeout=ftp_config.get('timeout', 30))
+            ftp.login(ftp_config['username'], ftp_config['password'])
+            
+            # Change to target directory (create if needed)
+            target_dir = ftp_config.get('directory', '/acoustic_detection')
+            try:
+                ftp.cwd(target_dir)
+            except ftplib.error_perm:
+                # Create directory if it doesn't exist
+                ftp.mkd(target_dir)
+                ftp.cwd(target_dir)
+            
+            # Upload file
+            with open(upload_item['local_path'], 'rb') as f:
+                ftp.storbinary(f'STOR {upload_item["remote_name"]}', f)
+            
+            ftp.quit()
+            return True
+            
+        except Exception as e:
+            print(f"❌ FTP upload error: {e}")
+            return False
+    
+    def _cleanup_local_files(self, ftp_config):
+        """Clean up old local files based on retention policy."""
+        try:
+            keep_days = ftp_config.get('keep_local_days', 1)
+            cutoff_time = time.time() - (keep_days * 24 * 60 * 60)
+            
+            recordings_dir = os.path.join(os.path.dirname(__file__), 'recordings')
+            if not os.path.exists(recordings_dir):
+                return
+            
+            for filename in os.listdir(recordings_dir):
+                file_path = os.path.join(recordings_dir, filename)
+                if os.path.isfile(file_path) and os.path.getmtime(file_path) < cutoff_time:
+                    # Don't delete files that are still in the detection store
+                    if not any(d.get('filename') == filename for d in detection_store.detections):
+                        os.remove(file_path)
+                        print(f"🗑️  Cleaned up old file: {filename}")
+                        
+        except Exception as e:
+            print(f"❌ Cleanup error: {e}")
+
+ftp_uploader = FTPUploader()
+
 # Lightweight detector for Pi Zero W
 class PiZeroDetector(AcousticDetector):
     """Pi Zero W optimized detector."""
@@ -194,6 +322,9 @@ class PiZeroDetector(AcousticDetector):
                     }
                     detection_store.add_detection(detection_data)
                     
+                    # Queue for FTP upload
+                    ftp_uploader.queue_upload(audio_file_path, filename)
+                    
                     print(f"🐦 {bird_analysis['unique_species']} species → {filename}")
                     
                 except Exception as e:
@@ -227,6 +358,13 @@ def run_detector():
         
         detector_running = True
         print("🎤 Starting Pi Zero monitoring...")
+        
+        # Start FTP uploader if enabled
+        settings_obj = Settings()
+        settings_obj.load()
+        if settings_obj.config.get('ftp', {}).get('enabled', False):
+            ftp_uploader.start_uploader()
+        
         detector.start_monitoring()
     except Exception as e:
         print(f"❌ Detector error: {e}")

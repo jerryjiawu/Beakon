@@ -20,3 +20,5 @@ tensorflow>=2.8.0,<2.13.0; platform_machine != "armv6l" and platform_machine != 
 
 # System utilities
 psutil>=5.8.0
+
+# Note: ftplib is included in Python standard library
